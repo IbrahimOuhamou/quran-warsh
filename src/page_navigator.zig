@@ -15,12 +15,17 @@ const sf = struct {
 
 pub const NUMBER_OF_PAGES = 604;
 
+pub const WINDOW_WIDTH = @import("bismi_allah.zig").WINDOW_WIDTH;
+pub const WINDOW_HEIGHT = @import("bismi_allah.zig").WINDOW_HEIGHT;
+
 pub var current_page: usize = 1;
 pub var bookmarks: [10]usize = [1]usize{0} ** 10;
 
 /// list of the number of pages every surah starts with
 pub const surah_start_pages_list: [114]usize = [_]usize{ 1, 2, 50, 77, 106, 128, 151, 177, 187, 208, 221, 235, 249, 255, 262, 267, 282, 293, 305, 312, 322, 332, 342, 350, 359, 367, 377, 385, 396, 404, 411, 415, 418, 428, 434, 440, 446, 453, 458, 467, 477, 483, 489, 496, 499, 502, 507, 511, 515, 518, 520, 523, 526, 528, 531, 534, 537, 542, 545, 549, 551, 553, 554, 556, 558, 560, 562, 564, 566, 568, 570, 572, 574, 575, 577, 578, 580, 582, 583, 585, 586, 587, 587, 589, 590, 591, 591, 592, 593, 594, 595, 595, 596, 596, 597, 597, 598, 598, 599, 599, 600, 600, 601, 601, 601, 602, 602, 602, 603, 603, 603, 604, 604, 604 };
 pub const hizb_start_pages_list: [60]usize = [60]usize{ 1, 11, 22, 32, 43, 51, 62, 72, 82, 92, 102, 111, 121, 132, 142, 151, 162, 173, 182, 192, 201, 212, 222, 231, 242, 252, 262, 272, 282, 292, 302, 312, 322, 332, 342, 352, 362, 371, 382, 392, 402, 413, 422, 431, 442, 451, 462, 472, 482, 491, 502, 513, 522, 531, 542, 553, 562, 572, 582, 591 };
+pub const surah_names = [114][:0]const u8{ "fatihah", "bakarah", "al imran", "nisa", "maidah", "anam", "a'raf", "anfal", "tawbah", "yunus", "hud", "yusuf", "raad", "ibrahim", "hijr", "nahl", "isra", "kahf", "maryam", "taha", "anbiya", "hajj", "muminun", "nur", "furqan", "shu'ara", "naml", "qasas", "ankabut", "rum", "luqman", "sajdah", "ahzab", "saba", "fatir", "yasin", "saffat", "sad", "zumar", "ghafir", "fussilat", "shura", "zukhruf", "dukhan", "jathiyah", "ahqaf", "muhammad", "fath", "hujurat", "qaf", "dhariyat", "tur", "najm", "qamar", "rahman", "waqiah", "hadid", "mujadilah", "hashr", "mumtahanah", "saff", "jumu'ah", "munafiqun", "taghabun", "talaq", "tahrim", "mulk", "qalam", "haqqah", "maarij", "nuh", "jinn", "muzzammil", "muddathir", "qiyamah", "insan", "mursalat", "naba", "naziat", "abasa", "takwir", "infitar", "mutaffifin", "inshiqaq", "buruj", "tariq", "a'la", "ghashiyah", "fajr", "balad", "shams", "layl", "duha", "sharh", "tin", "alaq", "qadr", "bayyinah", "zalzalah", "adiyat", "qari'ah", "takathur", "asr", "humazah", "fil", "quraish", "ma'un", "kawthar", "kafirun", "nasr", "masad", "ikhlas", "falaq", "nas" };
+
 var file_name_buffer: [std.fs.max_path_bytes]u8 = undefined;
 
 fn embed_quran_pictures() ?[NUMBER_OF_PAGES][]const u8 {
@@ -46,11 +51,16 @@ fn embed_quran_pictures() ?[NUMBER_OF_PAGES][]const u8 {
 
 const quran_pictures_arr = if (compile_config.embed_pictures) embed_quran_pictures().? else undefined;
 
-pub var possible_quran_dir_paths_buffers: [3][]u8 = .{
+pub var possible_quran_dir_paths_buffers: [4][]u8 = .{
+    // this is set by 'src/download_images.zig'
+    // "res" is just a placeholder in case of error
+    @constCast("res"),
+    // this is set by 'src/bismi_allah.zig:get_self_exe_dir_path' block
+    // "res" is just a placeholder in case of error
     @constCast("res"),
     @constCast("/usr/share/quran_pictures"),
-    // this is set by 'src/bismi_allah.zig:get_self_exe_dir_path' block
-    // "res" is just a placeholder in case of errror
+    // alhamdo li Allah
+    // for this "res" it looks in the path relative to the caller (just in case)
     @constCast("res"),
 };
 
@@ -72,31 +82,40 @@ pub fn goToPage(sprite: *sf.Sprite, target_page: usize) void {
             // by the will of Allah
             // TODO: change the "{s}/{d}-scaled.jpg" to be "{s}/{d}{s}"
             //       the last {s} should be .[_][]u8 {".jpg", "-scaled.jpg", ".png"}
-            const file_name_slice = std.fmt.bufPrintZ(&file_name_buffer, "{s}/{d}-scaled.jpg", .{ possible_quran_dir_path, target_page }) catch |e| {
+            const file_name_slice = std.fmt.bufPrintZ(&file_name_buffer, "{s}/{d}.jpg", .{ possible_quran_dir_path, target_page }) catch |e| {
                 std.log.err("alhamdo li Allah error while writing to 'file_name_buffer': {any} target_page {d}\n", .{ e, target_page });
                 continue;
             };
 
-            sprite.setTexture(sf.Texture.createFromFile(file_name_slice) catch |e| {
+            var texture = sf.Texture.createFromFile(file_name_slice) catch |e| {
                 std.log.err("alhamdo li Allah error while callings 'sf.Texture.createFromFile()' err: '{any}' \n", .{e});
                 continue;
-            });
+            };
+            texture.setSmooth(true);
+
+            const texture_size = texture.getSize();
+            const texture_size_float: sf.Vector2f = .{ .x = @floatFromInt(texture_size.x), .y = @floatFromInt(texture_size.y) };
+
+            sprite.setScale(.{ .x = WINDOW_WIDTH / texture_size_float.x, .y = WINDOW_HEIGHT / texture_size_float.y });
+            sprite.setTexture(texture);
+
             break; // bismi Allah: if we get here then the images was found
         }
     }
 
-    // sprite.setTextureRect(sf.IntRect.init(393, 170, 1360, 2184));
-    // sprite.setTextureRect(sf.IntRect.init(196, 85, 680, 1542));
-
     current_page = target_page;
 }
 
-fn getCurrentSurahIndex() usize {
+pub fn getCurrentSurahIndex() usize {
     var i: usize = 0;
     while (i < surah_start_pages_list.len) : (i += 1) {
         if (current_page <= surah_start_pages_list[i]) return i;
     }
     return 0;
+}
+
+pub fn goToSurahByIndex(sprite: *sf.Sprite, index: usize) void {
+    goToPage(sprite, surah_start_pages_list[index]);
 }
 
 pub fn goToNextSurah(sprite: *sf.Sprite) void {
@@ -121,12 +140,16 @@ pub fn goToPreviousSurah(sprite: *sf.Sprite) void {
     }
 }
 
-fn getCurrentHizbIndex() usize {
+pub fn getCurrentHizbIndex() usize {
     var i: usize = 0;
     while (i < hizb_start_pages_list.len) : (i += 1) {
         if (current_page <= hizb_start_pages_list[i]) return i;
     }
     return 0;
+}
+
+pub fn goToHizbByIndex(sprite: *sf.Sprite, index: usize) void {
+    goToPage(sprite, hizb_start_pages_list[index]);
 }
 
 pub fn goToNextHizb(sprite: *sf.Sprite) void {

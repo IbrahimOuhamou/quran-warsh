@@ -1,6 +1,8 @@
 //بسم الله الرحمن الرحيم
 //la ilaha illa Allah Mohammed Rassoul Allah
 const std = @import("std");
+const compile_config = @import("compile_config");
+
 const sf = struct {
     const sfml = @import("sfml");
     usingnamespace sfml;
@@ -16,14 +18,16 @@ const Settings = struct {
 };
 
 const page_navigator = @import("page_navigator.zig");
+const ui = @import("ui.zig");
+const download_images = @import("download_images.zig");
 
-const IMAGE_WIDTH = 1792;
-const IMAGE_HEIGHT = 2560;
+pub const WINDOW_WIDTH = 600;
+pub const WINDOW_HEIGHT = 900;
 
 // var flag_zoomed_in: bool = false;
 
 var fixed_buffer: [1024]u8 = undefined;
-var app_data_dir_path: []u8 = undefined;
+pub var app_data_dir_path: []u8 = undefined;
 
 var fba: std.heap.FixedBufferAllocator = undefined;
 var allocator: std.mem.Allocator = undefined;
@@ -37,6 +41,7 @@ pub fn main() !void {
     loadData() catch |e| {
         std.debug.print("alhamdo li Allah err: {any}\n", .{e});
     };
+    download_images.app_data_dir_path = app_data_dir_path;
 
     get_self_exe_dir_path: {
         const dir_path = std.fs.selfExeDirPathAlloc(allocator) catch |e| {
@@ -48,16 +53,27 @@ pub fn main() !void {
             std.log.err("alhamdo li Allah error while concating 'self_dir' and 'res': {any}\n", .{e});
             break :get_self_exe_dir_path;
         };
-        page_navigator.possible_quran_dir_paths_buffers[2] = res_path;
+        page_navigator.possible_quran_dir_paths_buffers[1] = res_path;
     }
-    defer allocator.free(page_navigator.possible_quran_dir_paths_buffers[2]);
+    defer allocator.free(page_navigator.possible_quran_dir_paths_buffers[1]);
 
-    var window = try sf.RenderWindow.create(.{ .x = IMAGE_WIDTH, .y = IMAGE_HEIGHT }, 64, "quran warsh - tajweed quran", sf.Style.defaultStyle, null);
+    if (!compile_config.embed_pictures) {
+        const res_path = try std.mem.concatWithSentinel(allocator, u8, &[_][]u8{ app_data_dir_path, @constCast("/warsh-images") }, 0);
+        defer allocator.free(res_path);
+        std.mem.copyForwards(u8, &download_images.buffer_images_dir_path, res_path);
+        download_images.images_dir_path = download_images.buffer_images_dir_path[0..res_path.len];
+        page_navigator.possible_quran_dir_paths_buffers[0] = download_images.images_dir_path;
+    }
+
+    ui.font = try sf.Font.createFromMemory(ui.font_data);
+    defer ui.font.destroy();
+
+    var window = try sf.RenderWindow.create(.{ .x = WINDOW_WIDTH, .y = WINDOW_HEIGHT }, 64, "quran warsh - tajweed quran", sf.Style.defaultStyle, null);
     defer window.destroy();
 
     window.setFramerateLimit(30);
 
-    window.setSize(.{ .x = IMAGE_WIDTH / 2, .y = IMAGE_HEIGHT / 2 });
+    // window.setSize(.{ .x = IMAGE_WIDTH / 2, .y = IMAGE_HEIGHT / 2 });
 
     var quran_sprite = try sf.Sprite.create();
     defer quran_sprite.destroy();
@@ -69,6 +85,7 @@ pub fn main() !void {
         switch (event) {
             .closed => {
                 window.close();
+                break;
             },
             .key_pressed => {
                 if (event.key_pressed.shift) {
@@ -115,6 +132,15 @@ pub fn main() !void {
                 //        toggleZoom();
                 // }
             },
+            .mouse_button_pressed => {
+                if (event.mouse_button_pressed.button == .left) ui.is_mouse_button_left_pressed = true;
+            },
+            .mouse_button_released => {
+                if (event.mouse_button_released.button == .left) ui.is_mouse_button_left_pressed = false;
+            },
+            .mouse_moved => {
+                ui.mouse_position = event.mouse_moved.pos;
+            },
             else => {},
         }
 
@@ -123,6 +149,10 @@ pub fn main() !void {
 
         //drawnig by the will of Allah
         window.draw(quran_sprite, null);
+
+        ui.drawUi(&window, &quran_sprite) catch |e| {
+            std.log.err("alhamdo li Allah error: {any}\n", .{e});
+        };
     }
 
     try saveData();
